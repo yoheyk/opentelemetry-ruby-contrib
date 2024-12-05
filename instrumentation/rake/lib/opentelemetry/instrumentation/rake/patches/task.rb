@@ -6,6 +6,8 @@ module OpenTelemetry
       module Patches
         # Module to prepend to Rask::Task for instrumentation
         module Task
+          ARGUMENT_REGEX = /\[.+\]$/
+
           def invoke(*args)
             tracer.in_span('rake.invoke', attributes: { 'rake.task' => name }) do
               super
@@ -29,7 +31,9 @@ module OpenTelemetry
           end
 
           def force_flush
-            OpenTelemetry.tracer_provider.force_flush if ::Rake.application.top_level_tasks.include?(name)
+            return unless ::Rake.application.top_level_tasks.any? { |task| task.sub(ARGUMENT_REGEX, '') == name }
+
+            OpenTelemetry.tracer_provider.force_flush
           end
         end
       end

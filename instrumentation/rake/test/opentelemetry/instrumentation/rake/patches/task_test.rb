@@ -14,11 +14,14 @@ describe OpenTelemetry::Instrumentation::Rake::Patches::Task do
   let(:exporter) { EXPORTER }
   let(:spans) { exporter.finished_spans }
 
-  let(:task_name) { :test_rake_instrumentation }
+  let(:task_name) { 'test_rake_instrumentation' }
+  let(:task_name_with_arg) { 'test_rake_instrumentation[123]' }
   let(:task) { Rake::Task[task_name] }
 
   let(:invoke_span) { spans.find { |s| s.name == 'rake.invoke' } }
   let(:execute_span) { spans.find { |s| s.name == 'rake.execute' && s.attributes['rake.task'] == task_name.to_s } }
+
+  let(:mock_tracer_provider) { Minitest::Mock.new }
 
   before do
     exporter.reset
@@ -38,6 +41,32 @@ describe OpenTelemetry::Instrumentation::Rake::Patches::Task do
       _(execute_span.name).must_equal 'rake.execute'
       _(execute_span.attributes['rake.task']).must_equal 'test_rake_instrumentation'
     end
+
+    it 'does forcibly flush the tracer' do
+      mock_tracer_provider.expect(:force_flush, true)
+
+      OpenTelemetry.stub :tracer_provider, mock_tracer_provider do
+        Rake.application.stub(:top_level_tasks, [task_name]) do
+          task.execute
+        end
+      end
+
+      mock_tracer_provider.verify
+    end
+
+    describe 'with an argument' do
+      it 'does forcibly flush the tracer' do
+        mock_tracer_provider.expect(:force_flush, true)
+
+        OpenTelemetry.stub :tracer_provider, mock_tracer_provider do
+          Rake.application.stub(:top_level_tasks, [task_name_with_arg]) do
+            task.execute
+          end
+        end
+
+        mock_tracer_provider.verify
+      end
+    end
   end
 
   describe '#invoke' do
@@ -54,6 +83,34 @@ describe OpenTelemetry::Instrumentation::Rake::Patches::Task do
       _(execute_span.name).must_equal 'rake.execute'
       _(execute_span.attributes['rake.task']).must_equal 'test_rake_instrumentation'
       _(execute_span.parent_span_id).must_equal(invoke_span.span_id)
+    end
+
+    it 'does forcibly flush the tracer' do
+      mock_tracer_provider.expect(:force_flush, true)
+      mock_tracer_provider.expect(:force_flush, true)
+
+      OpenTelemetry.stub :tracer_provider, mock_tracer_provider do
+        Rake.application.stub(:top_level_tasks, [task_name]) do
+          task.invoke
+        end
+      end
+
+      mock_tracer_provider.verify
+    end
+
+    describe 'with an argument' do
+      it 'does forcibly flush the tracer' do
+        mock_tracer_provider.expect(:force_flush, true)
+        mock_tracer_provider.expect(:force_flush, true)
+
+        OpenTelemetry.stub :tracer_provider, mock_tracer_provider do
+          Rake.application.stub(:top_level_tasks, [task_name_with_arg]) do
+            task.invoke
+          end
+        end
+
+        mock_tracer_provider.verify
+      end
     end
 
     describe 'with a prerequisite task' do
